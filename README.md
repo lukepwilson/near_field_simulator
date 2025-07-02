@@ -17,3 +17,10 @@ and instantly view four heatmaps showing:
 Under the hood, it builds the near-field channel matrix from element positions, performs SVD, applies water-filling power allocation, and computes throughput.
 
 ---
+Usage:
+
+1) Download *pa_nearfield_flexible_core.m* and *pa_nearfield_flexible_wrapper.m*
+2) Run pa_nearfield_flexible_wrapper.m
+3) Adjust settings on GUI to your liking
+
+Please contact me via lukepeterwilson26@gmail.com for bugs or further inquiry
