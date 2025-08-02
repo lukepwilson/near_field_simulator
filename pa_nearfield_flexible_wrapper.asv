@@ -1,0 +1,105 @@
+% compute_chrank_heatmap_with_tx.m
+% STATIC HEATMAP OF CHANNEL RANK vs. VERTICAL & HORIZONTAL OFFSETS
+% WITH TX ANTENNA LOCATIONS AND REGION CONTOURS OVERLAID
+
+% Luke Wilson
+
+
+clear; clc; close all;
+
+%% USER PARAMETERS
+fc               = 29e9;      % center frequency (Hz)
+N_pa_tx          = 20;         % # TX subarrays
+N_pa_rx          = 2;         % # RX subarrays
+spread_tx        = 20;      % TX per subarray spread (m)
+spread_rx        = 1;      % RX per subarray spread (m)
+
+% sweep ranges
+vertical_offset_vals   = linspace(0.01, 3000000, 50);   % RX–TX separation (m)
+horizontal_offset_vals = linspace(-3000, 3000, 50);    % lateral offset (m)
+
+% beam & null angles (broadside + 90° null)
+tx_beam_angles = zeros(1, N_pa_tx);
+tx_beam_angles(1:20) = 20;
+tx_beam_angles(21:30) = 0;
+tx_beam_angles(31:50) = -20;
+
+
+tx_null_angles = 90 * ones(1, N_pa_tx);
+rx_beam_angles = zeros(1, N_pa_rx);
+rx_null_angles = 90 * ones(1, N_pa_rx);
+
+%% PREALLOCATE AND COMPUTE RANK MAP
+M = numel(vertical_offset_vals);
+N = numel(horizontal_offset_vals);
+rank_map = nan(M, N);
+
+total = M*N;
+counter = 1;
+tStart = tic
+for i = 1:M
+    dtrx = vertical_offset_vals(i);
+    for j = 1:N
+        tic
+        offset = horizontal_offset_vals(j);
+        [~, ~, ch_rank] = pa_nearfield_flexible_core( ...
+            fc, dtrx, ...
+            N_pa_rx, N_pa_tx, ...
+            spread_rx, spread_tx, ...
+            offset, ...
+            tx_beam_angles, tx_null_angles, ...
+            rx_beam_angles, rx_null_angles);
+        rank_map(i,j) = ch_rank;
+        iteration = toc;
+        fprintf('iteration %d/%d took %.2f s.\n', counter,total,iteration);
+        counter= counter+1;
+    end
+end
+elapsed = toc;
+fprintf('Heavy computation took %.2f seconds.\n', elapsed);
+%% GET TX ELEMENT LOCATIONS
+[~, tx_loc, ~] = pa_nearfield_flexible_core( ...
+    fc, vertical_offset_vals(1), ...
+    N_pa_rx, N_pa_tx, ...
+    spread_rx, spread_tx, ...
+    0, ...                      % no horizontal offset
+    tx_beam_angles, tx_null_angles, ...
+    rx_beam_angles, rx_null_angles);
+
+%% DEFINE REGION BOUNDARIES
+d_tx   = (N_pa_tx - 1) * spread_tx;
+d_rx   = (N_pa_rx - 1) * spread_rx;
+lambda = 3e8 / fc;
+
+region_1 = d_tx * d_rx / lambda;
+region_2 = 2 * region_1;
+
+%% CREATE GRID FOR CONTOURS
+[H_grid, V_grid] = meshgrid(horizontal_offset_vals, vertical_offset_vals);
+radial_dist = sqrt(H_grid.^2 + V_grid.^2);
+
+%% PLOT HEATMAP
+figure;
+imagesc(horizontal_offset_vals, vertical_offset_vals, rank_map);
+set(gca, 'YDir','normal');
+colormap(jet);
+colorbar;
+xlabel('Horizontal Offset (m)');
+ylabel('Vertical RX–TX Separation (m)');
+title('Channel Rank Heatmap with Regions');
+
+hold on;
+
+% Overlay region boundaries
+contour(H_grid, V_grid, radial_dist, [region_1 region_1], ...
+    'LineColor', 'k', 'LineWidth', 1.5, 'DisplayName','Region 1');
+contour(H_grid, V_grid, radial_dist, [region_2 region_2], ...
+    'LineColor', 'b', 'LineStyle','--', 'LineWidth', 1.5, 'DisplayName','Region 2');
+
+% Overlay TX antenna x-positions at y = 0
+plot(tx_loc, zeros(size(tx_loc)), 'kp', ...
+     'MarkerFaceColor','w', 'MarkerSize',8, 'DisplayName','TX elements');
+
+legend('Location','northeastoutside');
+
+hold off;

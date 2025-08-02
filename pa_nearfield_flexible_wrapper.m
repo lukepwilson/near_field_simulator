@@ -1,193 +1,153 @@
-% PHASED ARRAY FLEXIBLE SIMULATION WRAPPER (4-panel)
-% Author: Luke Wilson | UI Optimized: 07/2025
-
+% compute_chrank_heatmap_with_tx_parallel.m
+% STATIC HEATMAP OF CHANNEL RANK vs. VERTICAL & HORIZONTAL OFFSETS
+% WITH TX ANTENNA LOCATIONS AND REGION CONTOURS OVERLAID
+% Parallelized version using parfor
+% Luke Wilson
 clear; clc; close all;
 
-%% INITIAL PARAMETERS
-P = struct();
-P.fc               = 29e9;
-P.N_pa_rx          = 1;
-P.N_pa_tx          = 1;
-P.spread_rx        = 0.05;
-P.spread_tx        = 0.05;
-P.horizontal_range = 0.1;
-P.vertical_range   = 0.4;
-P.vertical_offset_vals   = linspace(0.001, P.vertical_range, 150);
-P.horizontal_offset_vals = linspace(-P.horizontal_range, P.horizontal_range, 150);
+%% USER PARAMETERS
+fc = 29e9; % center frequency (Hz)
+N_pa_tx = 2; % # TX subarrays
+N_pa_rx = 2; % # RX subarrays
+spread_tx = 1; % TX per subarray spread (m)
+spread_rx = 1; % RX per subarray spread (m)
 
-%% FIGURE & TILES SETUP
-fig = figure('Name','Flexible Core: 4 Metrics','NumberTitle','off', ...
-             'Position',[200 200 1000 900]);
+% sweep ranges
+vertical_offset_vals = linspace(0.01, 30, 200); % RX–TX separation (m)
+horizontal_offset_vals = linspace(-20, 20, 200); % lateral offset (m)
 
-t = tiledlayout(fig,2,2,'TileSpacing','compact','Padding','compact', ...
-                'Position',[0.05 0.25 0.90 0.7]);  % Enlarged and moved up
+% beam & null angles (broadside + 90° null)
+tx_beam_angles = zeros(1, N_pa_tx);
+tx_beam_angles(1) = 0;
+tx_beam_angles(2) = 0;
+tx_null_angles = 90 * ones(1, N_pa_tx);
+rx_beam_angles = zeros(1, N_pa_rx);
+rx_null_angles = 90 * ones(1, N_pa_rx);
 
-ax1 = nexttile(t); title(ax1,'Capacity (bits/s/Hz)','FontSize',14);
-ax2 = nexttile(t); title(ax2,'Eig Ratio (dB)','FontSize',14);
-ax3 = nexttile(t); title(ax3,'Eig 1 (dB)','FontSize',14);
-ax4 = nexttile(t); title(ax4,'Eig 2 (dB)','FontSize',14);
-
-infoBox = annotation(fig,'textbox',[0.70 0.45 0.25 0.08], ...
-    'String',{}, 'EdgeColor','none', 'HorizontalAlignment','right', 'FontSize',12);
-
-setappdata(fig,'P',P);
-setappdata(fig,'Axes',[ax1, ax2, ax3, ax4]);
-setappdata(fig,'InfoBox',infoBox);
-
-%% UI LAYOUT (2 columns, compact)
-uiFontSize = 12;
-halfW = 0.34; spacing = 0.10; labelW = 0.12;
-left1 = 0.05; left2 = left1 + halfW + spacing;
-fullW = 0.79;
-
-% Updated row vertical positions (lowered)
-y1 = 0.15;  % Row 1: TX / RX arrays
-y2 = 0.10;  % Row 2: Center Frequency
-y3 = 0.05;  % Row 3: Spread TX / RX
-y4 = 0.02;  % Row 4: Horizontal / Vertical offset range sliders
-
-% --- Row 1: TX / RX Arrays ---
-uicontrol(fig,'Style','edit','Units','normalized',...
-    'Position',[left1 y1 0.07 0.04],'String',num2str(P.N_pa_tx),'FontSize',uiFontSize,...
-    'Callback',@(e,~) editCallback(fig,'N_pa_tx',e));
-uicontrol(fig,'Style','text','Units','normalized',...
-    'Position',[left1+0.08 y1 labelW 0.04],'String','# TX arrays','FontSize',uiFontSize,...
-    'HorizontalAlignment','left');
-
-uicontrol(fig,'Style','edit','Units','normalized',...
-    'Position',[left2 y1 0.07 0.04],'String',num2str(P.N_pa_rx),'FontSize',uiFontSize,...
-    'Callback',@(e,~) editCallback(fig,'N_pa_rx',e));
-uicontrol(fig,'Style','text','Units','normalized',...
-    'Position',[left2+0.08 y1 labelW 0.04],'String','# RX arrays','FontSize',uiFontSize,...
-    'HorizontalAlignment','left');
-
-% --- Row 2: Center Frequency (full width) ---
-uicontrol(fig,'Style','slider','Units','normalized',...
-    'Position',[left1 y2 fullW 0.035],'Min',25e9,'Max',30e9,'Value',P.fc,...
-    'Callback',@(s,~) sliderCallback(fig,'fc',get(s,'Value')));
-uicontrol(fig,'Style','text','Units','normalized',...
-    'Position',[left1+fullW+0.01 y2 labelW 0.035],'String','Center Frequency (Hz)', ...
-    'FontSize',uiFontSize,'HorizontalAlignment','left');
-
-% --- Row 3: Spread TX / Spread RX ---
-uicontrol(fig,'Style','slider','Units','normalized',...
-    'Position',[left1 y3 halfW 0.035],'Min',0,'Max',1,'Value',P.spread_tx,...
-    'Callback',@(s,~) sliderCallback(fig,'spread_tx',get(s,'Value')));
-uicontrol(fig,'Style','text','Units','normalized',...
-    'Position',[left1+halfW+0.005 y3 labelW 0.035],'String','Spread TX (m)', ...
-    'FontSize',uiFontSize,'HorizontalAlignment','left');
-
-uicontrol(fig,'Style','slider','Units','normalized',...
-    'Position',[left2 y3 halfW 0.035],'Min',0,'Max',1,'Value',P.spread_rx,...
-    'Callback',@(s,~) sliderCallback(fig,'spread_rx',get(s,'Value')));
-uicontrol(fig,'Style','text','Units','normalized',...
-    'Position',[left2+halfW+0.005 y3 labelW 0.035],'String','Spread RX (m)', ...
-    'FontSize',uiFontSize,'HorizontalAlignment','left');
-
-% --- Row 4: Horizontal / Vertical Offset Ranges ---
-uicontrol(fig,'Style','slider','Units','normalized',...
-    'Position',[left1 y4 halfW 0.035],'Min',0.01,'Max',2,'Value',P.horizontal_range,...
-    'Callback',@(s,~) rangeSliderCallback(fig,'horizontal_range',get(s,'Value')));
-uicontrol(fig,'Style','text','Units','normalized',...
-    'Position',[left1+halfW+0.005 y4 labelW 0.035],'String','Horz Offset (±m)', ...
-    'FontSize',uiFontSize,'HorizontalAlignment','left');
-
-uicontrol(fig,'Style','slider','Units','normalized',...
-    'Position',[left2 y4 halfW 0.035],'Min',0.01,'Max',10,'Value',P.vertical_range,...
-    'Callback',@(s,~) rangeSliderCallback(fig,'vertical_range',get(s,'Value')));
-uicontrol(fig,'Style','text','Units','normalized',...
-    'Position',[left2+halfW+0.005 y4 labelW 0.035],'String','Vert Offset Max (m)', ...
-    'FontSize',uiFontSize,'HorizontalAlignment','left');
-
-%% INITIAL DRAW
-drawAll(fig);
-
-%% CALLBACK FUNCTIONS
-function sliderCallback(fig,field,val)
-    P = getappdata(fig,'P');
-    P.(field) = val;
-    setappdata(fig,'P',P);
-    drawAll(fig);
+%% SETUP PARALLEL POOL
+% Check if parallel pool exists, create if needed
+if isempty(gcp('nocreate'))
+    parpool(); % Uses default number of workers
 end
 
-function editCallback(fig,field,src)
-    P = getappdata(fig,'P');
-    v = round(str2double(get(src,'String')));
-    if isnan(v) || v < 1, v = P.(field); end
-    set(src,'String',num2str(v));
-    P.(field) = v;
-    setappdata(fig,'P',P);
-    drawAll(fig);
-end
+%% PREALLOCATE AND COMPUTE RANK MAP
+M = numel(vertical_offset_vals);
+N = numel(horizontal_offset_vals);
+rank_map = nan(M, N);
+total = M * N;
 
-function rangeSliderCallback(fig, field, val)
-    P = getappdata(fig,'P');
-    P.(field) = val;
-    if strcmp(field,'horizontal_range')
-        P.horizontal_offset_vals = linspace(-val, val, 150);
-    elseif strcmp(field,'vertical_range')
-        P.vertical_offset_vals = linspace(0.001, val, 150);
+% Create linear indices for progress tracking
+[I, J] = meshgrid(1:M, 1:N);
+i_vals = I(:);
+j_vals = J(:);
+
+% Preallocate results vector for parfor
+rank_results = zeros(total, 1);
+
+tStart = tic;
+
+% Parallel computation with linear indexing
+parfor idx = 1:total
+    i = i_vals(idx);
+    j = j_vals(idx);
+    
+    dtrx = vertical_offset_vals(i);
+    offset = horizontal_offset_vals(j);
+    
+    [~, ~, ch_rank] = pa_nearfield_flexible_core( ...
+        fc, dtrx, ...
+        N_pa_rx, N_pa_tx, ...
+        spread_rx, spread_tx, ...
+        offset, ...
+        tx_beam_angles, tx_null_angles, ...
+        rx_beam_angles, rx_null_angles);
+    
+    rank_results(idx) = ch_rank;  % Store in linear array
+    
+    % Progress reporting (note: this won't be ordered due to parallelization)
+    if mod(idx, 100) == 0 || idx == total
+        fprintf('Completed %d/%d iterations\n', idx, total);
     end
-    setappdata(fig,'P',P);
-    drawAll(fig);
 end
 
-%% DRAW FUNCTION
-function drawAll(fig)
-    P   = getappdata(fig,'P');
-    axs = getappdata(fig,'Axes');
-    infoBox = getappdata(fig,'InfoBox');
-    M = numel(P.vertical_offset_vals);
-    N = numel(P.horizontal_offset_vals);
+% Reshape results back to 2D matrix
+rank_map = reshape(rank_results, M, N).';
 
-    cap_map    = nan(M,N);
-    ratio_map  = nan(M,N);
-    eig1_map   = nan(M,N);
-    eig2_map   = nan(M,N);
+elapsed = toc(tStart);
+fprintf('Heavy computation took %.2f seconds.\n', elapsed);
 
-    for i = 1:M
-      for j = 1:N
-        [eig1, eig2, eigRatio, capacity, ~, tx_locs] = ...
-          pa_nearfield_flexible_core( ...
-            P.fc, P.vertical_offset_vals(i), ...
-            P.N_pa_rx, P.N_pa_tx, ...
-            P.spread_rx, P.spread_tx, ...
-            P.horizontal_offset_vals(j), [], [] );
+%% ALTERNATIVE: Row-wise parfor approach (SIMPLER OPTION)
+% If the above doesn't work, uncomment this section and comment out the above parfor
+% This approach parallelizes over rows instead of all elements
 
-        eig1_map(i,j)  = eig1;
-        eig2_map(i,j)  = eig2;
-        ratio_map(i,j) = eigRatio;
-        cap_map(i,j)   = capacity;
-      end
-    end
+% tStart = tic;
+% parfor i = 1:M
+%     dtrx = vertical_offset_vals(i);
+%     temp_rank = zeros(1, N);
+%     
+%     for j = 1:N
+%         offset = horizontal_offset_vals(j);
+%         [~, ~, ch_rank] = pa_nearfield_flexible_core( ...
+%             fc, dtrx, ...
+%             N_pa_rx, N_pa_tx, ...
+%             spread_rx, spread_tx, ...
+%             offset, ...
+%             tx_beam_angles, tx_null_angles, ...
+%             rx_beam_angles, rx_null_angles);
+%         temp_rank(j) = ch_rank;
+%     end
+%     
+%     rank_map(i, :) = temp_rank;
+%     fprintf('Completed row %d/%d\n', i, M);
+% end
+% elapsed = toc(tStart);
+% fprintf('Heavy computation took %.2f seconds.\n', elapsed);
 
-    all_eigs = [eig1_map(:); eig2_map(:)];
-    eig_min = min(all_eigs);
-    eig_max = max(all_eigs);
-    maps   = {cap_map, ratio_map, eig1_map, eig2_map};
-    labels = {'Capacity','Eig Ratio (dB)','Eig 1 (dB)','Eig 2 (dB)'};
+%% GET TX ELEMENT LOCATIONS
+[~, tx_loc, ~] = pa_nearfield_flexible_core( ...
+    fc, vertical_offset_vals(1), ...
+    N_pa_rx, N_pa_tx, ...
+    spread_rx, spread_tx, ...
+    0, ... % no horizontal offset
+    tx_beam_angles, tx_null_angles, ...
+    rx_beam_angles, rx_null_angles);
 
-    for k = 1:4
-        ax = axs(k); cla(ax);
-        imagesc(ax, P.horizontal_offset_vals, P.vertical_offset_vals, maps{k});
-        set(ax,'YDir','normal','FontSize',12);
-        xlabel(ax,'Horizontal Offset (m)','FontSize',12);
-        ylabel(ax,'Vertical Offset (m)','FontSize',12);
-        title(ax,labels{k},'FontSize',14);
+%% DEFINE REGION BOUNDARIES
+d_tx = (N_pa_tx - 1) * spread_tx;
+d_rx = (N_pa_rx - 1) * spread_rx;
+lambda = 3e8 / fc;
+region_1 = d_tx * d_rx / lambda;
+region_2 = 2 * region_1;
 
-        if k==3 || k==4
-            clim(ax,[eig_min eig_max]);
-        end
-        cb = colorbar(ax);
-        cb.Label.String = labels{k}; cb.Label.FontSize = 12;
+%% CREATE GRID FOR CONTOURS
+[H_grid, V_grid] = meshgrid(horizontal_offset_vals, vertical_offset_vals);
+radial_dist = sqrt(H_grid.^2 + V_grid.^2);
 
-        hold(ax,'on');
-        plot(ax, tx_locs, zeros(size(tx_locs)), 'kp','MarkerFaceColor','w');
-        hold(ax,'off');
-    end
+%% PLOT HEATMAP
+figure;
+imagesc(horizontal_offset_vals, vertical_offset_vals, rank_map);
+set(gca, 'YDir', 'normal');
+colormap(jet);
+cb = colorbar;
+clim([1, min(N_pa_tx, N_pa_rx)]);
+xlabel('Horizontal Offset (m)');
+ylabel('Vertical RX–TX Separation (m)');
+title('Channel Rank Heatmap with Regions');
+hold on;
 
-    infoStr = sprintf(['fc: %.2e Hz\nSpread RX: %.2f m\nSpread TX: %.2f m\n' ...
-                       'Horz Range: ±%.2f m\nVert Range: %.2f m'], ...
-        P.fc, P.spread_rx, P.spread_tx, P.horizontal_range, P.vertical_range);
-    set(infoBox,'String',infoStr);
-end
+% Overlay region boundaries
+contour(H_grid, V_grid, radial_dist, [region_1 region_1], ...
+    'LineColor', 'k', 'LineWidth', 1.5, 'DisplayName', 'Region 1');
+contour(H_grid, V_grid, radial_dist, [region_2 region_2], ...
+    'LineColor', 'b', 'LineStyle', '--', 'LineWidth', 1.5, 'DisplayName', 'Region 2');
+
+% Overlay TX antenna x-positions at y = 0
+plot(tx_loc, zeros(size(tx_loc)), 'kp', ...
+    'MarkerFaceColor', 'w', 'MarkerSize', 8, 'DisplayName', 'TX elements');
+
+legend('Location', 'northeastoutside');
+hold off;
+
+%% OPTIONAL: Save results for future use
+% save('channel_rank_heatmap_results.mat', 'rank_map', 'vertical_offset_vals', ...
+%      'horizontal_offset_vals', 'tx_loc', 'region_1', 'region_2');
