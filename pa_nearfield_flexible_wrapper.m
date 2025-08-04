@@ -7,21 +7,29 @@ clear; clc; close all;
 
 %% USER PARAMETERS
 fc = 29e9; % center frequency (Hz)
-N_pa_tx = 2; % # TX subarrays
-N_pa_rx = 2; % # RX subarrays
-spread_tx = 1; % TX per subarray spread (m)
+N_pa_tx = 3; % # TX subarrays
+N_pa_rx = 3; % # RX subarrays
+spread_tx = 10; % TX per subarray spread (m)
 spread_rx = 1; % RX per subarray spread (m)
 
 % sweep ranges
-vertical_offset_vals = linspace(0.01, 30, 200); % RX–TX separation (m)
-horizontal_offset_vals = linspace(-20, 20, 200); % lateral offset (m)
+vertical_offset_vals = linspace(0.01, 30, 50); % RX–TX separation (m)
+horizontal_offset_vals = linspace(-80, 80, 50); % lateral offset (m)
 
 % beam & null angles (broadside + 90° null)
 tx_beam_angles = zeros(1, N_pa_tx);
-tx_beam_angles(1) = 0;
+tx_beam_angles(1) = 40;
 tx_beam_angles(2) = 0;
-tx_null_angles = 90 * ones(1, N_pa_tx);
+tx_beam_angles(3) = -40;
+
+
 rx_beam_angles = zeros(1, N_pa_rx);
+rx_beam_angles(1) = 40;
+rx_beam_angles(2) = 0;
+rx_beam_angles(3) = -40;
+
+
+tx_null_angles = 90 * ones(1, N_pa_tx);
 rx_null_angles = 90 * ones(1, N_pa_rx);
 
 %% SETUP PARALLEL POOL
