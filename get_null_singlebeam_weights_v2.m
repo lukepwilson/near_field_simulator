@@ -1,4 +1,4 @@
-function [wnew, bm] = get_null_singlebeam_weights_v2(beamAng, whichbeam, wannaplot)
+function [wnew, bm] = get_null_singlebeam_weights_v2(beamAng, N, whichbeam, wannaplot)
 % Ish Jain
 % Dec 15 2020
 
@@ -30,11 +30,11 @@ beamAOD = beamAng(whichbeam); % main beam direction
 nullidx=setdiff(1:length(beamAng),whichbeam);
 beamNull = beamAng(nullidx); %null beam direction
 
-N=8; %Number of antennas in ULA
+%Number of antennas in ULA
 theta = [-90:0.1:90].'; %Range of theta for plotting beampattern
 
 for bid=1:length(beamAng) %create standard single beam patterns
-    w(:,bid) = get_multibeam_weights(beamAng(bid),1,0,8);
+    w(:,bid) = get_multibeam_weights(beamAng(bid),1,0,N);
 end
 
 %create nulling
